@@ -1,0 +1,55 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+.venv/
+
+# Jupyter Notebook
+.ipynb_checkpoints/
+*.ipynb_checkpoints/
+
+# PyTorch
+*.pth
+*.pt
+*.ckpt
+checkpoints/
+*.pkl
+*.pickle
+
+# Data
+data/
+*.csv
+*.tsv
+*.json
+datasets/
+
+# HuggingFace cache
+.cache/
+cache/
+fine_tuned_bert/
+results/
+
+# Logs
+logs/
+*.log
+runs/
+tensorboard/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Large files
+*.bin
+*.safetensors
+*.msgpack
