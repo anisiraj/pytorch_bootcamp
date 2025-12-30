@@ -1,0 +1,23 @@
+Metadata-Version: 2.4
+Name: pytorch-coursera
+Version: 0.1.0
+Summary: PyTorch practice and tutorial repository with reusable NLP utilities
+Requires-Python: >=3.12
+Requires-Dist: datasets>=4.4.2
+Requires-Dist: diffusers>=0.32.0
+Requires-Dist: directory-tree>=1.0.0
+Requires-Dist: fastai>=2.8.5
+Requires-Dist: ipykernel>=7.1.0
+Requires-Dist: lightning>=2.6.0
+Requires-Dist: matplotlib>=3.10.7
+Requires-Dist: opencv-python>=4.10.0
+Requires-Dist: optuna>=4.6.0
+Requires-Dist: pandas>=2.3.3
+Requires-Dist: scikit-image>=0.26.0
+Requires-Dist: scikit-learn>=1.6.0
+Requires-Dist: seaborn>=0.13.0
+Requires-Dist: torch>=2.9.0
+Requires-Dist: torchmetrics>=1.8.2
+Requires-Dist: torchvision>=0.24.0
+Requires-Dist: tqdm>=4.67.1
+Requires-Dist: transformers>=4.57.1
