@@ -89,3 +89,37 @@ class Vocabulary:
     def __len__(self):
         """Return vocabulary size."""
         return len(self.token2idx)
+
+    def get_vocab_size(self) -> int:
+        """
+        Get vocabulary size for embedding layer initialization.
+
+        Returns:
+            int: Total number of tokens in vocabulary
+
+        Example:
+            >>> vocab = Vocabulary(tokenizer=tokenize)
+            >>> vocab.build_from_texts(['hello world'])
+            >>> embedding = nn.Embedding(vocab.get_vocab_size(), embedding_dim=128)
+        """
+        return len(self.token2idx)
+
+    @property
+    def pad_token_id(self) -> int:
+        """
+        Get the padding token ID.
+
+        Returns:
+            int: Index of the PAD token (always 0)
+        """
+        return self.token2idx['<PAD>']
+
+    @property
+    def unk_token_id(self) -> int:
+        """
+        Get the unknown token ID.
+
+        Returns:
+            int: Index of the UNK token (always 1)
+        """
+        return self.token2idx['<UNK>']
