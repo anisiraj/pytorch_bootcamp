@@ -17,7 +17,7 @@ import torch
 import torch.nn as nn
 import torchmetrics
 from nlp_utils import (
-    tokenize, Vocabulary, ReviewDataSet, collate_fn,
+    SimpleTokenizer, ReviewDataSet, collate_fn,
     extract_imdb_sample_as_dict, SentimentModel, Trainer
 )
 from datasets import load_dataset
@@ -27,19 +27,19 @@ from torch.utils.data import DataLoader
 ds = load_dataset("stanfordnlp/imdb")
 train, test = extract_imdb_sample_as_dict(ds, train_size=5000, test_size=1000)
 
-# 2. Build vocabulary
-vocab = Vocabulary(tokenizer=tokenize)
-vocab.build_from_texts(train['text'])
+# 2. Build tokenizer vocabulary
+tokenizer = SimpleTokenizer(lowercase=True, remove_punctuation=True, min_freq=2)
+tokenizer.build_vocab(train['text'])
 
 # 3. Create datasets and loaders
-train_dataset = ReviewDataSet(target=train, vocab=vocab)
-test_dataset = ReviewDataSet(target=test, vocab=vocab)
+train_dataset = ReviewDataSet(target=train, tokenizer=tokenizer)
+test_dataset = ReviewDataSet(target=test, tokenizer=tokenizer)
 train_loader = DataLoader(train_dataset, batch_size=32, shuffle=True, collate_fn=collate_fn)
 test_loader = DataLoader(test_dataset, batch_size=32, shuffle=False, collate_fn=collate_fn)
 
 # 4. Create model and trainer
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-model = SentimentModel(vocab, embedding_dim=256, hidden_dim=128)
+model = SentimentModel(tokenizer, embedding_dim=256, hidden_dim=128, dropout=0.3)
 optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
 
 metrics = {
@@ -67,8 +67,10 @@ history = trainer.fit(num_epochs=5)
 nlp_utils/
 ├── __init__.py              # Main exports
 ├── tokenization/
-│   ├── tokenizer.py         # Simple whitespace tokenizer
-│   └── vocabulary.py        # Vocabulary class for encoding/decoding
+│   ├── protocol.py          # TokenizerProtocol interface
+│   ├── simple_tokenizer.py  # SimpleTokenizer (tokenization + vocabulary)
+│   ├── tokenizer.py         # Legacy tokenize function
+│   └── vocabulary.py        # Legacy Vocabulary class
 ├── data/
 │   ├── dataset.py           # ReviewDataSet and collate_fn
 │   └── utils.py             # Helper functions for data processing
@@ -81,62 +83,90 @@ nlp_utils/
 
 ## Components
 
-### Tokenizer
+### SimpleTokenizer
 
-Simple whitespace-based tokenizer with options for lowercasing and punctuation removal.
+Combined tokenization and vocabulary management following HuggingFace patterns. Handles tokenization, vocabulary building, encoding, and decoding in a single class.
 
 ```python
-from nlp_utils import tokenize
+from nlp_utils import SimpleTokenizer
 
-tokens = tokenize("Hello, World!", lowercase=True, remove_punctuation=True)
+# Create tokenizer with configuration
+tokenizer = SimpleTokenizer(
+    lowercase=True,
+    remove_punctuation=True,
+    min_freq=2,
+    min_length=1
+)
+
+# Build vocabulary from texts
+tokenizer.build_vocab(['hello world', 'hello there', 'world'])
+
+# Tokenize text
+tokens = tokenizer.tokenize("Hello, World!")
 # ['hello', 'world']
-```
-
-### Vocabulary
-
-Handles encoding text to indices and decoding indices back to text.
-
-```python
-from nlp_utils import Vocabulary, tokenize
-import torch.nn as nn
-
-vocab = Vocabulary(tokenizer=tokenize, min_freq=2)
-vocab.build_from_texts(['hello world', 'hello there'])
 
 # Encode text to indices
-indices = vocab.encode('hello world')
+indices = tokenizer.encode('hello world')
 
 # Decode indices back to tokens
-tokens = vocab.decode(indices)
+tokens = tokenizer.decode(indices)
 
-# Get vocabulary size (for embeddings)
-vocab_size = vocab.get_vocab_size()  # or len(vocab)
-embedding = nn.Embedding(vocab_size, embedding_dim=128)
+# Access vocabulary size
+vocab_size = tokenizer.vocab_size
 
 # Access special token IDs
-pad_id = vocab.pad_token_id  # 0
-unk_id = vocab.unk_token_id  # 1
+pad_id = tokenizer.pad_token_id  # 0
+unk_id = tokenizer.unk_token_id  # 1
 
-# Use padding index in embedding
-embedding = nn.Embedding(
-    vocab.get_vocab_size(),
-    embedding_dim=128,
-    padding_idx=vocab.pad_token_id
-)
+# Save/load tokenizer state
+tokenizer.save('tokenizer.pkl')
+loaded_tokenizer = SimpleTokenizer.load('tokenizer.pkl')
+```
+
+### TokenizerProtocol
+
+Protocol interface that enables compatibility with any tokenizer (including HuggingFace tokenizers). Any tokenizer implementing this protocol can be used with the models and datasets.
+
+```python
+from nlp_utils import TokenizerProtocol, SimpleTokenizer
+from transformers import AutoTokenizer
+
+# SimpleTokenizer implements the protocol
+tokenizer = SimpleTokenizer()
+assert isinstance(tokenizer, TokenizerProtocol)  # True
+
+# HuggingFace tokenizers also work (they have vocab_size, pad_token_id, encode, decode)
+hf_tokenizer = AutoTokenizer.from_pretrained("bert-base-uncased")
+# Can be used with SentimentModel and ReviewDataSet
+
+# Required attributes and methods:
+# - vocab_size: int
+# - pad_token_id: int
+# - encode(text: str) -> list[int]
+# - decode(ids: list[int]) -> list[str]
 ```
 
 ### ReviewDataSet
 
-PyTorch Dataset for text classification tasks.
+PyTorch Dataset for text classification tasks. Accepts any tokenizer implementing TokenizerProtocol.
 
 ```python
-from nlp_utils import ReviewDataSet
+from nlp_utils import ReviewDataSet, SimpleTokenizer
+
+# With SimpleTokenizer
+tokenizer = SimpleTokenizer()
+tokenizer.build_vocab(texts)
 
 dataset = ReviewDataSet(
     target={'text': texts, 'label': labels},
-    vocab=vocab,
+    tokenizer=tokenizer,
     max_length=512
 )
+
+# Also works with HuggingFace tokenizers
+from transformers import AutoTokenizer
+hf_tokenizer = AutoTokenizer.from_pretrained("bert-base-uncased")
+dataset = ReviewDataSet(target=data, tokenizer=hf_tokenizer)
 ```
 
 ### collate_fn
@@ -191,16 +221,21 @@ pooled = pool(embeddings, mask)          # [batch, emb_dim]
 
 ### SentimentModel
 
-Two-layer sentiment classification model with masked mean pooling.
+Two-layer sentiment classification model with masked mean pooling and dropout regularization. Accepts any tokenizer implementing TokenizerProtocol.
 
 ```python
-from nlp_utils import SentimentModel
+from nlp_utils import SentimentModel, SimpleTokenizer
+
+# With SimpleTokenizer
+tokenizer = SimpleTokenizer()
+tokenizer.build_vocab(texts)
 
 model = SentimentModel(
-    vocab=vocab,
+    tokenizer=tokenizer,
     embedding_dim=256,
     hidden_dim=128,
-    num_categories=2
+    num_categories=2,
+    dropout=0.3  # Add dropout for regularization
 )
 
 batch = {

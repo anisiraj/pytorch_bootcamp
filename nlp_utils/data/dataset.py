@@ -3,6 +3,8 @@
 import torch
 from torch.utils.data import Dataset
 
+from nlp_utils.tokenization.protocol import TokenizerProtocol
+
 
 class ReviewDataSet(Dataset):
     """
@@ -12,14 +14,22 @@ class ReviewDataSet(Dataset):
         target: Dictionary or HuggingFace Dataset containing text and labels
         text_key: Key for text data (default: "text")
         label_key: Key for label data (default: "label")
-        vocab: Vocabulary object for encoding text
+        tokenizer: Any tokenizer implementing TokenizerProtocol
         max_length: Maximum sequence length (default: 512)
     """
 
-    def __init__(self, target, text_key="text", label_key="label", vocab=None, max_length=512):
+    def __init__(
+        self,
+        target,
+        tokenizer: TokenizerProtocol,
+        text_key: str = "text",
+        label_key: str = "label",
+        max_length: int = 512
+    ):
         super().__init__()
-        self.text_key, self.label_key = text_key, label_key
-        self.vocab = vocab
+        self.text_key = text_key
+        self.label_key = label_key
+        self.tokenizer = tokenizer
         self.max_length = max_length
 
         # Validate input
@@ -32,7 +42,7 @@ class ReviewDataSet(Dataset):
         return len(self.target[self.text_key])
 
     def __getitem__(self, index):
-        tokens = self.vocab.encode(self.target[self.text_key][index])[:self.max_length]
+        tokens = self.tokenizer.encode(self.target[self.text_key][index])[:self.max_length]
         label = self.target[self.label_key][index]
         mask = [1] * len(tokens)
 
