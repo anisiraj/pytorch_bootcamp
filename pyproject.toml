@@ -26,3 +26,8 @@ dependencies = [
 
 [tool.setuptools]
 packages = ["nlp_utils"]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0.2",
+]

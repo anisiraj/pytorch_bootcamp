@@ -29,15 +29,26 @@ Draw the dimensions. Understand each operation.
 ### What to Build
 
 ```python
+import math
+import torch.nn.functional as F
+
 def scaled_dot_product_attention(Q, K, V, mask=None):
     """
-    Returns: (output, attention_weights)
+    Args:
+        Q, K, V: [batch, seq_len, d_k]
+        mask: [batch, seq_len] - 1 for real tokens, 0 for padding
+    Returns:
+        output: [batch, seq_len, d_k]
+        attention_weights: [batch, seq_len, seq_len]
     """
-    # 1. scores = Q @ K^T
-    # 2. scores = scores / sqrt(d_k)
-    # 3. if mask: scores.masked_fill(mask == 0, -1e9)
-    # 4. attention = softmax(scores)
-    # 5. output = attention @ V
+    # 1. scores = Q @ K.transpose(-2, -1)  # NOT K.T (breaks with batches!)
+    # 2. d_k = Q.shape[-1]  # NOT Q.shape(-1) - shape is attribute, not method
+    # 3. scores = scores / math.sqrt(d_k)  # NOT torch.sqrt(d_k) - d_k is int
+    # 4. if mask:
+    #       mask = mask.unsqueeze(1)  # Expand for broadcasting
+    #       scores = scores.masked_fill(mask == 0, float('-inf'))
+    # 5. attention = F.softmax(scores, dim=-1)
+    # 6. output = attention @ V
     pass
 
 def create_padding_mask(seq, pad_idx=0):
@@ -47,12 +58,53 @@ def create_padding_mask(seq, pad_idx=0):
 
 **Test it**:
 ```python
+# Test 1: No mask (all positions valid)
 Q = K = V = torch.randn(2, 10, 64)
 output, weights = scaled_dot_product_attention(Q, K, V)
-assert weights.sum(dim=-1).allclose(torch.ones(2, 10))  # Should sum to 1
+assert torch.allclose(weights.sum(dim=-1), torch.ones(2, 10))  # Should sum to 1
+
+# Test 2: With mask (realistic - variable length sequences)
+Q = K = V = torch.randn(2, 10, 64)
+mask = torch.ones(2, 10)
+mask[0, 7:] = 0  # First sequence: 7 real tokens, 3 padding
+mask[1, 5:] = 0  # Second sequence: 5 real tokens, 5 padding
+
+output, weights = scaled_dot_product_attention(Q, K, V, mask)
+assert torch.allclose(weights.sum(dim=-1), torch.ones(2, 10))
+
+# Verify masked positions get ~0 attention
+assert weights[0, :7, 7:].max() < 1e-6, "Padding should not receive attention!"
+assert weights[1, :5, 5:].max() < 1e-6, "Padding should not receive attention!"
 ```
 
 **Experiment**: Run with and without scaling. Compare variance.
+
+### Common Gotchas
+```python
+# ❌ WRONG: K.T only works for 2D matrices
+scores = Q @ K.T  # Breaks with batch dimension!
+
+# ✓ CORRECT: Use .transpose(-2, -1) for batched tensors
+scores = Q @ K.transpose(-2, -1)
+
+# ❌ WRONG: .shape is attribute, not method
+d_k = Q.shape(-1)  # TypeError!
+
+# ✓ CORRECT: Index shape attribute
+d_k = Q.shape[-1]  # or Q.size(-1)
+
+# ❌ WRONG: torch.sqrt expects tensor, not int
+scores = scores / torch.sqrt(d_k)  # TypeError!
+
+# ✓ CORRECT: Use math.sqrt for Python int
+scores = scores / math.sqrt(d_k)
+
+# ❌ WRONG: Direct equality for floats
+assert (weights.sum(dim=-1) == 1.0).all()  # Fails due to precision
+
+# ✓ CORRECT: Use torch.allclose for floating point comparisons
+assert torch.allclose(weights.sum(dim=-1), torch.ones(2, 10))
+```
 
 ---
 
@@ -74,7 +126,7 @@ class MultiHeadAttention(nn.Module):
         """Reverse of split_heads"""
         pass
 
-    def forward(self, Q, K, V, mask=None):
+    def forward(self, x, mask=None):
         # 1. Project Q, K, V
         # 2. Split into heads
         # 3. Apply attention

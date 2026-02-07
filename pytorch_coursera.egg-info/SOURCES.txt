@@ -5,3 +5,8 @@ pytorch_coursera.egg-info/SOURCES.txt
 pytorch_coursera.egg-info/dependency_links.txt
 pytorch_coursera.egg-info/requires.txt
 pytorch_coursera.egg-info/top_level.txt
+tests/test_attention.py
+tests/test_feedforward.py
+tests/test_pooling.py
+tests/test_positional_encoding.py
+tests/test_transformer_encoder.py

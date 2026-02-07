@@ -441,16 +441,85 @@ output, hidden = lstm(packed)
 output, _ = pad_packed_sequence(output, batch_first=True)
 ```
 
-### Masking for Attention
-```python
-# Create mask for padded tokens
-def create_mask(seq, pad_idx=0):
-    return (seq != pad_idx).unsqueeze(1).unsqueeze(2)  # (batch, 1, 1, seq_len)
+### Attention Mechanisms (From Scratch)
 
-# Apply mask in attention
-attention_scores = torch.matmul(Q, K.transpose(-2, -1))
-attention_scores = attention_scores.masked_fill(mask == 0, -1e9)
-attention_weights = F.softmax(attention_scores, dim=-1)
+#### Scaled Dot-Product Attention
+```python
+import math
+import torch.nn.functional as F
+
+def scaled_dot_product_attention(Q, K, V, mask=None):
+    """
+    Args:
+        Q, K, V: [batch, seq_len, d_k] or [batch, num_heads, seq_len, d_k]
+        mask: [batch, seq_len] - 1 for real tokens, 0 for padding
+    Returns:
+        output: [batch, seq_len, d_k]
+        attention_weights: [batch, seq_len, seq_len]
+    """
+    # Compute attention scores
+    scores = Q @ K.transpose(-2, -1)  # [batch, seq_len, seq_len]
+
+    # Scale by sqrt(d_k)
+    d_k = Q.shape[-1]  # NOT Q.shape(-1) - shape is attribute, not method
+    scores = scores / math.sqrt(d_k)  # Use math.sqrt, NOT torch.sqrt(d_k)
+
+    # Apply mask (set padding positions to -inf before softmax)
+    if mask is not None:
+        # Expand mask: [batch, seq_len] → [batch, 1, seq_len]
+        mask = mask.unsqueeze(1)
+        scores = scores.masked_fill(mask == 0, float('-inf'))
+
+    # Softmax to get attention weights (sum to 1 along last dim)
+    attention_weights = F.softmax(scores, dim=-1)
+
+    # Apply attention to values
+    output = attention_weights @ V
+
+    return output, attention_weights
+```
+
+#### Key Points for Attention
+```python
+# ✓ CORRECT: Use .transpose(-2, -1) for batched tensors
+scores = Q @ K.transpose(-2, -1)
+
+# ✗ WRONG: .T swaps ALL dimensions, breaks with batches
+scores = Q @ K.T  # Only works for 2D matrices!
+
+# ✓ CORRECT: Get dimension from shape attribute
+d_k = Q.shape[-1]  # or Q.size(-1)
+
+# ✗ WRONG: shape is not a method
+d_k = Q.shape(-1)  # TypeError!
+
+# ✓ CORRECT: Use math.sqrt for Python int
+scores = scores / math.sqrt(d_k)
+
+# ✗ WRONG: torch.sqrt expects tensor, not int
+scores = scores / torch.sqrt(d_k)  # TypeError!
+
+# ✓ CORRECT: Check attention weights sum to 1
+assert torch.allclose(weights.sum(dim=-1), torch.ones(batch, seq_len))
+
+# Note: Use torch.allclose for floating point comparisons, not ==
+```
+
+#### Masking for Padding
+```python
+# Create attention mask from input_ids
+attention_mask = (input_ids != pad_token_id).long()  # 1 for real, 0 for pad
+
+# In attention function, expand and apply mask
+mask = attention_mask.unsqueeze(1)  # [batch, seq_len] → [batch, 1, seq_len]
+scores = scores.masked_fill(mask == 0, float('-inf'))
+
+# After softmax, padded positions get ~0 weight
+# Why -inf? Because exp(-inf) = 0, so softmax(-inf) = 0
+
+# Verify masking works
+max_attention_to_padding = weights[:, :real_length, real_length:].max()
+assert max_attention_to_padding < 1e-6  # Should be ~0
 ```
 
 ### Text Tokenization (Basic)
